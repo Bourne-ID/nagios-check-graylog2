@@ -26,7 +26,7 @@ const DEBUG = "NCG2"
 
 // license information
 const (
-        author = "Antonino Catinello"
+        author = "Robin Bourne, forked from Antonino Catinello work"
         license = "BSD"
         year = "2016"
         copyright = "\u00A9"
@@ -43,13 +43,13 @@ var (
 	ssl *bool
 	// env debugging variable
 	debug string
-	// performence data
+	// performance data
 	pdata string
 	// version value
 	id string
 )
 
-// handle performence data output
+// handle performance data output
 func perf(elapsed, total, inputs, tput, index float64) {
 	pdata = fmt.Sprintf("time=%f;;;; total=%.f;;;; sources=%.f;;;; throughput=%.f;;;; index_failures=%.f;;;;", elapsed, total, inputs, tput, index)
 }
