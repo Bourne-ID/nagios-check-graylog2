@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+	"net"
+	"strconv"
 )
 
 // nagios exit codes
@@ -47,22 +49,32 @@ var (
 	pdata string
 	// version value
 	id string
+	// collector warn threshold
+	collectorWT *int
+	// collector warn threshold
+	collectorCT *int
+	// expected number of collectors
+	expectedCollectors *int
 )
 
 // handle performance data output
-func perf(elapsed, total, inputs, tput, index float64) {
-	pdata = fmt.Sprintf("time=%f;;;; total=%.f;;;; sources=%.f;;;; throughput=%.f;;;; index_failures=%.f;;;;", elapsed, total, inputs, tput, index)
+func perf(elapsed, total, inputs, tput, index, collectors, failureCollectors, offineCollectors  float64) {
+	pdata = fmt.Sprintf("time=%f;;;; total=%.f;;;; sources=%.f;;;; throughput=%.f;;;; index_failures=%.f;;;; collectors=%.f;;;; collector_failure=%.f;;;; collector_offline=%.f;;;;", elapsed, total, inputs, tput, index, collectors, failureCollectors, offineCollectors)
 }
 
 // handle args
 func init() {
-	link = flag.String("l", "http://localhost:12900", "Graylog2 API URL")
-	user = flag.String("u", "", "API username")
-	pass = flag.String("p", "", "API password")
+	link = flag.String("l", "http://localhost:12900", "Graylog2 API URL - REQUIRED")
+	user = flag.String("u", "", "API username - REQUIRED")
+	pass = flag.String("p", "", "API password - REQUIRED")
 	ssl = flag.Bool("insecure", false, "Accept insecure SSL/TLS certificates.")
 	version = flag.Bool("version", false, "Display version and license information.")
+	expectedCollectors = flag.Int("ex", 0, "Expected Number of Collectors")
+	collectorWT = flag.Int("wt", 1, "Collection Warning Threshold")
+	collectorCT = flag.Int("ct", 2, "Collection Critical Threshold")
+
 	debug = os.Getenv(DEBUG)
-	perf(0, 0, 0, 0, 0)
+	perf(0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // return nagios codes on quit
@@ -96,16 +108,27 @@ func parse(link *string) string {
 	if err != nil {
 		quit(UNKNOWN, "Can not parse given URL.", err)
 	}
+	host, port, _ := net.SplitHostPort(l.Host)
 
-	if !strings.Contains(l.Host, ":") {
-		quit(UNKNOWN, "Port number is missing. Try "+l.Scheme+"://hostname:port", err)
+	if len(host) == 0 {
+		quit(UNKNOWN, "Hostname is missing.", err)
+	}
+
+	if _, err := strconv.Atoi(port); err != nil {
+		quit(UNKNOWN, "Port is not a number.", err)
 	}
 
 	if !strings.HasPrefix(l.Scheme, "HTTP") && !strings.HasPrefix(l.Scheme, "http") {
-		quit(UNKNOWN, "Only HTTP is supported as protocol.", err)
+		quit(UNKNOWN, "Only HTTP/S protocols are supported.", err)
 	}
 
-	return l.Scheme + "://" + l.Host
+	s := l.String()
+	//check for trailing slash
+	if s[len(s)-1:] == "/" {
+		s = s[0:len(s)-1]
+	}
+
+	return s
 }
 
 func main() {
@@ -126,7 +149,7 @@ func main() {
 
 	system := query(c+"/system", *user, *pass)
 	if system["is_processing"].(bool) != true {
-		quit(CRITICAL, "Service is not processing!", nil)
+		quit(CRITICAL, "Service is not processing", nil)
 	}
 	if strings.Compare(system["lifecycle"].(string), "running") != 0 {
 		quit(WARNING, fmt.Sprintf("lifecycle: %v", system["lifecycle"].(string)), nil)
@@ -140,11 +163,56 @@ func main() {
 	inputs := query(c+"/system/inputs", *user, *pass)
 	total := query(c+"/count/total", *user, *pass)
 
+	collectors := query(c+"/plugins/org.graylog.plugins.collector/collectors", *user, *pass)
+
+	failures := 0
+	offline := 0
+	collectorCount:=0
+
+	for index := range collectors["collectors"].([]interface {}) {
+		collectorCount++
+		element := collectors["collectors"].([]interface{})[index].(map[string]interface{})
+		fmt.Println(element)
+
+		if !element["active"].(bool) {
+			offline++
+		} else {
+			status := element["node_details"].(map[string]interface{})["status"].(map[string]interface{})["status"].(float64)
+			// 0= Running, 1=Unknown, 2=Failing, default=Unknown
+			if (status > 0) {
+				failures++;
+			}
+		}
+	}
+
 	elapsed := time.Since(start)
 
-	perf(elapsed.Seconds(), total["events"].(float64), inputs["total"].(float64), tput["throughput"].(float64), index["total"].(float64))
-	quit(OK, fmt.Sprintf("Service is running!\n%.f total events processed\n%.f index failures\n%.f throughput\n%.f sources\nCheck took %v",
-		total["events"].(float64), index["total"].(float64), tput["throughput"].(float64), inputs["total"].(float64), elapsed), nil)
+	perf(elapsed.Seconds(), total["events"].(float64), inputs["total"].(float64), tput["throughput"].(float64), index["total"].(float64), float64(collectorCount), float64(failures), float64(offline))
+
+	if (failures + offline >= *collectorCT) {
+		if (failures > 0 && offline > 0) {
+			quit(CRITICAL, fmt.Sprintf("%d collectors are failing and %d are inactive", failures, offline), nil)
+		} else if (failures > 0) {
+			quit(CRITICAL, fmt.Sprintf("%d collectors are failing", failures), nil)
+		} else {
+			quit(CRITICAL, fmt.Sprintf("%d collectors are inactive", offline), nil)
+		}
+	} else if (failures + offline >= *collectorWT) {
+		if (failures > 0 && offline > 0) {
+			quit(WARNING, fmt.Sprintf("%d collectors are failing and %d are inactive", failures, offline), nil)
+		} else if (failures > 0) {
+			quit(WARNING, fmt.Sprintf("%d collectors are failing", failures), nil)
+		} else {
+			quit(WARNING, fmt.Sprintf("%d collectors are inactive", offline), nil)
+		}
+	}
+
+	if (*expectedCollectors != collectorCount) {
+		quit(CRITICAL, fmt.Sprintf("Expecting %d collectors but %d reported in", expectedCollectors, collectorCount), nil)
+	}
+
+	quit(OK, fmt.Sprintf("Service is running!\n%.f total events processed\n%.f index failures\n%.f throughput\n%.f sources\n%.f collectors detected\n%.f collectors offine\n%.f collectors failing\nCheck took %v",
+		total["events"].(float64), index["total"].(float64), tput["throughput"].(float64), inputs["total"].(float64), float64(collectorCount), float64(offline), float64(failures), elapsed), nil)
 }
 
 // call Graylog2 HTTP API
