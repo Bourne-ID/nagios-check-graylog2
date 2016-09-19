@@ -172,7 +172,6 @@ func main() {
 	for index := range collectors["collectors"].([]interface {}) {
 		collectorCount++
 		element := collectors["collectors"].([]interface{})[index].(map[string]interface{})
-		fmt.Println(element)
 
 		if !element["active"].(bool) {
 			offline++
@@ -207,7 +206,7 @@ func main() {
 		}
 	}
 
-	if (*expectedCollectors != collectorCount) {
+	if (*expectedCollectors > 0 && *expectedCollectors != collectorCount) {
 		quit(CRITICAL, fmt.Sprintf("Expecting %d collectors but %d reported in", *expectedCollectors, collectorCount), nil)
 	}
 
