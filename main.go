@@ -58,8 +58,8 @@ var (
 )
 
 // handle performance data output
-func perf(elapsed, total, inputs, tput, index, collectors, failureCollectors, offineCollectors  float64) {
-	pdata = fmt.Sprintf("time=%f;;;; total=%.f;;;; sources=%.f;;;; throughput=%.f;;;; index_failures=%.f;;;; collectors=%.f;;;; collector_failure=%.f;;;; collector_offline=%.f;;;;", elapsed, total, inputs, tput, index, collectors, failureCollectors, offineCollectors)
+func perf(elapsed, total, inputs, tput, index, collectors, failureCollectors, offlineCollectors  float64) {
+	pdata = fmt.Sprintf("time=%f;;;; total=%.f;;;; sources=%.f;;;; throughput=%.f;;;; index_failures=%.f;;;; collectors=%.f;;;; collector_failure=%.f;;;; collector_offline=%.f;;;;", elapsed, total, inputs, tput, index, collectors, failureCollectors, offlineCollectors)
 }
 
 // handle args
@@ -210,7 +210,7 @@ func main() {
 		quit(CRITICAL, fmt.Sprintf("Expecting %d collectors but %d reported in", *expectedCollectors, collectorCount), nil)
 	}
 
-	quit(OK, fmt.Sprintf("Service is running!\n%.f total events processed\n%.f index failures\n%.f throughput\n%.f sources\n%.f collectors detected\n%.f collectors offine\n%.f collectors failing\nCheck took %v",
+	quit(OK, fmt.Sprintf("Service is running!\n%.f total events processed\n%.f index failures\n%.f throughput\n%.f sources\n%.f collectors detected\n%.f collectors offline\n%.f collectors failing\nCheck took %v",
 		total["events"].(float64), index["total"].(float64), tput["throughput"].(float64), inputs["total"].(float64), float64(collectorCount), float64(offline), float64(failures), elapsed), nil)
 }
 
