@@ -208,7 +208,7 @@ func main() {
 	}
 
 	if (*expectedCollectors != collectorCount) {
-		quit(CRITICAL, fmt.Sprintf("Expecting %d collectors but %d reported in", expectedCollectors, collectorCount), nil)
+		quit(CRITICAL, fmt.Sprintf("Expecting %d collectors but %d reported in", *expectedCollectors, collectorCount), nil)
 	}
 
 	quit(OK, fmt.Sprintf("Service is running!\n%.f total events processed\n%.f index failures\n%.f throughput\n%.f sources\n%.f collectors detected\n%.f collectors offine\n%.f collectors failing\nCheck took %v",
